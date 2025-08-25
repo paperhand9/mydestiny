@@ -134,11 +134,16 @@ Mint: ${mint.toBase58()}
 Token Account: ${tokenAccount.address.toBase58()}
 Metadata URI: ${uri}
 `);
+   } catch (err: unknown) {
+  if (err instanceof Error) {
+    setError(err.message);
+  } else {
+    setError(String(err));
+  }
+  setStatus(null);
+}
 
-    } catch (err: any) {
-      setError(err.message || "Error during minting");
-      setStatus(null);
-    }
+    
   }, [publicKey, tokenDecimals, uri]);
 
   return (
