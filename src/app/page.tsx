@@ -3,12 +3,7 @@
 import React, { useState, useCallback } from "react";
 import {
   Connection,
-  PublicKey,
-  clusterApiUrl,
   Keypair,
-  SystemProgram,
-  Transaction,
-  sendAndConfirmTransaction,
 } from "@solana/web3.js";
 import {
   createMint,
@@ -16,20 +11,19 @@ import {
   mintTo,
   setAuthority,
   AuthorityType,
-  TOKEN_PROGRAM_ID,
   burn,
   freezeAccount,
   thawAccount,
 } from "@solana/spl-token";
-import { useWallet, WalletProvider } from "@solana/wallet-adapter-react";
+
+import { WalletProvider, useWallet } from "@solana/wallet-adapter-react";
 import { WalletAdapterNetwork } from "@solana/wallet-adapter-base";
-import {
-  PhantomWalletAdapter,
-} from "@solana/wallet-adapter-wallets";
+import { PhantomWalletAdapter } from "@solana/wallet-adapter-wallets";
 import { WalletModalProvider, WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 
 import "@solana/wallet-adapter-react-ui/styles.css";
 
+// Network setup, mainnet connection
 const network = WalletAdapterNetwork.Mainnet;
 const connection = new Connection("https://api.mainnet-beta.solana.com", "confirmed");
 
@@ -46,15 +40,13 @@ export default function Home() {
 }
 
 function MintInterface() {
-  const { publicKey, sendTransaction, connected } = useWallet();
+  const { publicKey, connected } = useWallet();
 
-  // Token info states
   const [tokenName, setTokenName] = useState("");
   const [tokenSymbol, setTokenSymbol] = useState("");
   const [tokenDecimals, setTokenDecimals] = useState(0);
   const [uri, setUri] = useState(""); // Metadata URI
-  
-  // Status and error
+
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -64,13 +56,9 @@ function MintInterface() {
       setStatus("Starting minting process...");
       if (!publicKey) throw new Error("Wallet not connected");
 
-      // Create a new Keypair for mint authority (you can use your wallet for authority)
+      // IMPORTANT: Mint authority wallet must be funded with SOL on mainnet
       const mintAuthority = Keypair.generate();
 
-      // Airdrop is not possible on mainnet; you have to fund this keypair manually
-      // For this example, we assume you supplied this keypair with SOL
-
-      // Create the mint (token)
       setStatus("Creating mint...");
       const mint = await createMint(
         connection,
@@ -82,7 +70,6 @@ function MintInterface() {
 
       setStatus(`Mint created: ${mint.toBase58()}`);
 
-      // Get or create ATA (associated token account) for connected wallet
       setStatus("Getting token account...");
       const tokenAccount = await getOrCreateAssociatedTokenAccount(
         connection,
@@ -91,7 +78,6 @@ function MintInterface() {
         publicKey
       );
 
-      // Mint tokens to your wallet's token account
       setStatus("Minting tokens to your account...");
       await mintTo(
         connection,
@@ -102,7 +88,6 @@ function MintInterface() {
         1 * 10 ** tokenDecimals
       );
 
-      // Now revoke minting authority (set to null)
       setStatus("Revoking minting authority...");
       await setAuthority(
         connection,
@@ -113,7 +98,6 @@ function MintInterface() {
         null
       );
 
-      // Revoke freeze authority (optional)
       setStatus("Revoking freezing authority...");
       await setAuthority(
         connection,
@@ -124,26 +108,19 @@ function MintInterface() {
         null
       );
 
-      // Revoke token account close authority if needed (not shown here)
-
-      // (Optional) Setup metadata via on-chain or off-chain URI handling
-      // Generally, using Metaplex metadata program which needs custom instructions - advanced usage
-
       setStatus(`Token minted successfully!
 Mint: ${mint.toBase58()}
 Token Account: ${tokenAccount.address.toBase58()}
 Metadata URI: ${uri}
 `);
-   } catch (err: unknown) {
-  if (err instanceof Error) {
-    setError(err.message);
-  } else {
-    setError(String(err));
-  }
-  setStatus(null);
-}
-
-    
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError(String(err));
+      }
+      setStatus(null);
+    }
   }, [publicKey, tokenDecimals, uri]);
 
   return (
@@ -225,4 +202,3 @@ Metadata URI: ${uri}
     </div>
   );
 }
-
