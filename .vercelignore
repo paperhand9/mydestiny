@@ -1,0 +1,7 @@
+.next/cache
+.next/build-manifest.json
+node_modules/
+public/large-assets/
+tests/
+docs/
+
