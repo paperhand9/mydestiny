@@ -1,103 +1,226 @@
-import Image from "next/image";
+"use client";
+
+import React, { useState, useCallback } from "react";
+import {
+  Connection,
+  PublicKey,
+  clusterApiUrl,
+  Keypair,
+  SystemProgram,
+  Transaction,
+  sendAndConfirmTransaction,
+} from "@solana/web3.js";
+import {
+  createMint,
+  getOrCreateAssociatedTokenAccount,
+  mintTo,
+  setAuthority,
+  AuthorityType,
+  TOKEN_PROGRAM_ID,
+  burn,
+  freezeAccount,
+  thawAccount,
+} from "@solana/spl-token";
+import {
+  WalletAdapterNetwork,
+  useWallet,
+  WalletProvider,
+} from "@solana/wallet-adapter-react";
+import {
+  PhantomWalletAdapter,
+} from "@solana/wallet-adapter-wallets";
+import { WalletModalProvider, WalletMultiButton } from "@solana/wallet-adapter-react-ui";
+
+import "@solana/wallet-adapter-react-ui/styles.css";
+
+const network = WalletAdapterNetwork.Mainnet;
+const connection = new Connection("https://api.mainnet-beta.solana.com", "confirmed");
 
 export default function Home() {
-  return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const wallets = [new PhantomWalletAdapter()];
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
+  return (
+    <WalletProvider wallets={wallets} autoConnect>
+      <WalletModalProvider>
+        <MintInterface />
+      </WalletModalProvider>
+    </WalletProvider>
+  );
+}
+
+function MintInterface() {
+  const { publicKey, sendTransaction, connected } = useWallet();
+
+  // Token info states
+  const [tokenName, setTokenName] = useState("");
+  const [tokenSymbol, setTokenSymbol] = useState("");
+  const [tokenDecimals, setTokenDecimals] = useState(0);
+  const [uri, setUri] = useState(""); // Metadata URI
+  
+  // Status and error
+  const [status, setStatus] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const onMintClick = useCallback(async () => {
+    try {
+      setError(null);
+      setStatus("Starting minting process...");
+      if (!publicKey) throw new Error("Wallet not connected");
+
+      // Create a new Keypair for mint authority (you can use your wallet for authority)
+      const mintAuthority = Keypair.generate();
+
+      // Airdrop is not possible on mainnet; you have to fund this keypair manually
+      // For this example, we assume you supplied this keypair with SOL
+
+      // Create the mint (token)
+      setStatus("Creating mint...");
+      const mint = await createMint(
+        connection,
+        mintAuthority, // payer
+        mintAuthority.publicKey, // mint authority
+        mintAuthority.publicKey, // freeze authority
+        tokenDecimals
+      );
+
+      setStatus(`Mint created: ${mint.toBase58()}`);
+
+      // Get or create ATA (associated token account) for connected wallet
+      setStatus("Getting token account...");
+      const tokenAccount = await getOrCreateAssociatedTokenAccount(
+        connection,
+        mintAuthority,
+        mint,
+        publicKey
+      );
+
+      // Mint tokens to your wallet's token account
+      setStatus("Minting tokens to your account...");
+      await mintTo(
+        connection,
+        mintAuthority,
+        mint,
+        tokenAccount.address,
+        mintAuthority,
+        1 * 10 ** tokenDecimals
+      );
+
+      // Now revoke minting authority (set to null)
+      setStatus("Revoking minting authority...");
+      await setAuthority(
+        connection,
+        mintAuthority,
+        mint,
+        mintAuthority.publicKey,
+        AuthorityType.MintTokens,
+        null
+      );
+
+      // Revoke freeze authority (optional)
+      setStatus("Revoking freezing authority...");
+      await setAuthority(
+        connection,
+        mintAuthority,
+        mint,
+        mintAuthority.publicKey,
+        AuthorityType.FreezeAccount,
+        null
+      );
+
+      // Revoke token account close authority if needed (not shown here)
+
+      // (Optional) Setup metadata via on-chain or off-chain URI handling
+      // Generally, using Metaplex metadata program which needs custom instructions - advanced usage
+
+      setStatus(`Token minted successfully!
+Mint: ${mint.toBase58()}
+Token Account: ${tokenAccount.address.toBase58()}
+Metadata URI: ${uri}
+`);
+
+    } catch (err: any) {
+      setError(err.message || "Error during minting");
+      setStatus(null);
+    }
+  }, [publicKey, tokenDecimals, uri]);
+
+  return (
+    <div className="max-w-xl mx-auto p-6">
+      <h1 className="text-2xl mb-4 font-bold">Solana Token Minting (Mainnet Only)</h1>
+
+      <WalletMultiButton />
+
+      {!connected && <p className="mt-4 text-red-600">Connect your wallet to mint a token.</p>}
+
+      {connected && (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            onMintClick();
+          }}
+          className="mt-4 space-y-4"
+        >
+          <div>
+            <label>Token Name:</label>
+            <input
+              required
+              type="text"
+              className="border p-2 w-full"
+              value={tokenName}
+              onChange={(e) => setTokenName(e.target.value)}
+              placeholder="Example Token"
             />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+          </div>
+
+          <div>
+            <label>Token Symbol:</label>
+            <input
+              required
+              type="text"
+              maxLength={5}
+              className="border p-2 w-full"
+              value={tokenSymbol}
+              onChange={(e) => setTokenSymbol(e.target.value)}
+              placeholder="EXMPL"
+            />
+          </div>
+
+          <div>
+            <label>Decimals (default 0):</label>
+            <input
+              type="number"
+              min={0}
+              max={9}
+              className="border p-2 w-full"
+              value={tokenDecimals}
+              onChange={(e) => setTokenDecimals(Number(e.target.value))}
+            />
+          </div>
+
+          <div>
+            <label>Metadata URI:</label>
+            <input
+              type="url"
+              className="border p-2 w-full"
+              value={uri}
+              onChange={(e) => setUri(e.target.value)}
+              placeholder="https://arweave.net/your-metadata.json"
+            />
+          </div>
+
+          <button
+            type="submit"
+            className="bg-blue-600 text-white py-2 px-4 rounded disabled:opacity-50"
+            disabled={!tokenName || !tokenSymbol || !connected}
           >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+            Mint Token
+          </button>
+        </form>
+      )}
+
+      {status && <p className="mt-4 text-green-600 whitespace-pre-line">{status}</p>}
+      {error && <p className="mt-4 text-red-600">{error}</p>}
     </div>
   );
 }
+
