@@ -21,11 +21,8 @@ import {
   freezeAccount,
   thawAccount,
 } from "@solana/spl-token";
-import {
-  WalletAdapterNetwork,
-  useWallet,
-  WalletProvider,
-} from "@solana/wallet-adapter-react";
+import { useWallet, WalletProvider } from "@solana/wallet-adapter-react";
+import { WalletAdapterNetwork } from "@solana/wallet-adapter-base";
 import {
   PhantomWalletAdapter,
 } from "@solana/wallet-adapter-wallets";
